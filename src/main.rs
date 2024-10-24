@@ -280,7 +280,7 @@ fn watch_markdown_file(app_state: Arc<AppState>) {
     let (tx_notify, rx_notify) = channel();
     let watcher = if cfg!(target_os = "linux") {
         // For whatever reason, recommended watcher was erroring out
-        // when used within WSL2 or linux (Mint OS 21.2)
+        // when used within WSL2 or linux (tested in Mint OS 21.2)
         // notify issue https://github.com/notify-rs/notify/issues/254
         // recommended using pollwatcher which worked in my testing
         let mut watcher = PollWatcher::new(
