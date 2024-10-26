@@ -1,8 +1,8 @@
 [package]
 name = "omd"
-version = "0.1.4"
+version = "0.2.0"
 edition = "2021"
-description = "A minimalistic and slick looking markdown viewer with support for hot reloading"
+description = "A minimalistic and slick looking markdown viewer with support for hot reloading and latex"
 license = "MIT"
 repository = "https://github.com/ptrglbvc/omd"
 keywords = ["markdown", "md", "dark-mode"]
