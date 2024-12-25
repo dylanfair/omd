@@ -25,15 +25,16 @@ struct Args {
     #[arg(value_name = "FILE")]
     file: Option<PathBuf>,
 
+    //The host name
     #[arg(short = 'H', long = "host", default_value = "127.0.0.1")]
     host: String,
-
+    //The port number
     #[arg(short = 'P', long = "port", default_value = "3030")]
     port: u16,
-
+    //Temporary HTML file instead of a server.
     #[arg(short, long)]
     static_mode: bool,
-
+    //Renders the markdown in clipboard
     #[arg(short = 'C', long = "clipboard")]
     clipboard: bool,
 }
