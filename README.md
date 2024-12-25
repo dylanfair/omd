@@ -48,7 +48,7 @@
    cargo install omd
    ```
 
-   That is it.
+   Installation is complete.
 
 ## Usage
 
@@ -141,7 +141,7 @@ Please make sure to update tests as appropriate.
 
 - Thanks to the Rust community for their amazing crates that make projects like this possible.
 - Inspired by the need for a simple Markdown previewer without unnecessary overhead.
-- Thank you contributors, in particular [dylanfair](https://www.github.com/dylanfair) for the Linux support and [phaker97](https://github.com/phaker97) for the Latex support.
+- Thank you contributors, in particular [dylanfair](https://www.github.com/dylanfair) for the Linux support and [phaker97](https://github.com/phaker97) for the LaTeX support.
 
 ## Contact
 
