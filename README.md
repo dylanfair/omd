@@ -4,11 +4,11 @@
 
 ## Features
 
-- **Static Mode**: Convert Markdown files to HTML and open them directly in your default browser without running a server.
 - **Server Mode**: Run a local server to preview your Markdown files with live-reload functionality as you edit them.
+- **Static Mode**: Convert Markdown files to HTML and open them directly in your default browser without running a server.
 - **CommonMark Extensions**: Supports strikethrough, tables, footnotes, task lists, etc.
-- **Customizable Styling**: Includes default CSS styling, which can be customized by editing `style.css`.
-- **Embedded Fonts and Favicon**: Uses embedded fonts and favicon for a consistent look and self-contained HTML output.
+- **Full Latex Support**: Math.
+- **Render Clipboard Contents**: Using the -C or --clipboard flags you can render any markdown in your clipboard.
 
 ## Installation
 
@@ -121,6 +121,7 @@ Please make sure to update tests as appropriate.
 
 - Thanks to the Rust community for their amazing crates that make projects like this possible.
 - Inspired by the need for a simple Markdown previewer without unnecessary overhead.
+- Thank you contributors
 
 ## Contact
 

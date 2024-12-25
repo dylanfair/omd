@@ -10,6 +10,8 @@ use std::time::Duration;
 
 use base64::encode;
 use clap::Parser;
+use clipboard::ClipboardContext;
+use clipboard::ClipboardProvider;
 use futures_util::stream::{Stream, StreamExt};
 use local_ip_address::local_ip;
 use notify::Watcher;
@@ -31,11 +33,21 @@ struct Args {
 
     #[arg(short, long)]
     static_mode: bool,
+
+    #[arg(short = 'C', long = "clipboard")]
+    clipboard: bool,
 }
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
     let args = Args::parse();
+
+    // Check if both file and clipboard flags are provided
+    if args.file.is_some() && args.clipboard {
+        eprintln!("Error: Cannot use both a file and the clipboard flag at the same time.");
+        eprintln!("Please provide either a file or use the --clipboard flag, but not both.");
+        std::process::exit(1);
+    }
 
     if args.static_mode {
         run_static_mode(&args)?;
@@ -47,23 +59,32 @@ async fn main() -> io::Result<()> {
 }
 
 fn run_static_mode(args: &Args) -> io::Result<()> {
-    let (file_name, markdown_input) = match &args.file {
-        Some(file_path) => {
-            let mut file = File::open(&file_path).unwrap_or_else(|err| {
-                eprintln!("Error opening file {}: {}", file_path.display(), err);
-                std::process::exit(1);
-            });
-            let mut content = String::new();
-            file.read_to_string(&mut content)?;
-            (
-                file_path.file_name().unwrap().to_string_lossy().to_string(),
-                content,
-            )
-        }
-        None => {
-            let mut content = String::new();
-            io::stdin().read_to_string(&mut content)?;
-            (String::from("New file"), content)
+    let (file_name, markdown_input) = if args.clipboard {
+        let mut clipboard: ClipboardContext = ClipboardProvider::new().unwrap();
+        let content = clipboard.get_contents().unwrap_or_else(|err| {
+            eprintln!("Error reading from clipboard: {}", err);
+            std::process::exit(1);
+        });
+        (String::from("Clipboard"), content)
+    } else {
+        match &args.file {
+            Some(file_path) => {
+                let mut file = File::open(&file_path).unwrap_or_else(|err| {
+                    eprintln!("Error opening file {}: {}", file_path.display(), err);
+                    std::process::exit(1);
+                });
+                let mut content = String::new();
+                file.read_to_string(&mut content)?;
+                (
+                    file_path.file_name().unwrap().to_string_lossy().to_string(),
+                    content,
+                )
+            }
+            None => {
+                let mut content = String::new();
+                io::stdin().read_to_string(&mut content)?;
+                (String::from("New file"), content)
+            }
         }
     };
 
@@ -97,8 +118,6 @@ fn check_for_wsl2() -> bool {
     if wslinterop.exists() {
         return true;
     }
-    // From here could add other conditional checks for wsl2
-    // based on https://superuser.com/questions/1749781/how-can-i-check-if-the-environment-is-wsl-from-a-shell-script
     false
 }
 
@@ -132,7 +151,6 @@ fn open_in_browser(link: String) {
         }
     }
 }
-// fn sse_event()
 
 type EventStream = Pin<Box<dyn Stream<Item = Result<sse::Event, warp::Error>> + Send>>;
 
@@ -147,15 +165,30 @@ fn event_stream(rx: broadcast::Receiver<()>) -> EventStream {
 }
 
 async fn run_server_mode(args: &Args) -> io::Result<()> {
-    let file_path = match &args.file {
-        Some(path) => path.clone(),
-        None => {
-            eprintln!("Error: No input file specified in server mode.");
+    let (file_path, file_name, markdown_input) = if args.clipboard {
+        let mut clipboard: ClipboardContext = ClipboardProvider::new().unwrap();
+        let content = clipboard.get_contents().unwrap_or_else(|err| {
+            eprintln!("Error reading from clipboard: {}", err);
             std::process::exit(1);
-        }
+        });
+        (
+            PathBuf::from("Clipboard"),
+            String::from("Clipboard"),
+            content,
+        )
+    } else {
+        let file_path = match &args.file {
+            Some(path) => path.clone(),
+            None => {
+                eprintln!("Error: No input file specified in server mode.");
+                std::process::exit(1);
+            }
+        };
+        let file_name = file_path.file_name().unwrap().to_string_lossy().to_string();
+        let markdown_input = read_markdown_input(&file_path)?;
+        (file_path, file_name, markdown_input)
     };
-    let file_name = file_path.file_name().unwrap().to_string_lossy().to_string();
-    let markdown_input = read_markdown_input(&file_path)?;
+
     let html_output = render_markdown_to_html(&markdown_input);
     let style = read_style_css();
     let fonts = read_fonts();
@@ -182,11 +215,7 @@ async fn run_server_mode(args: &Args) -> io::Result<()> {
     let sse_route = warp::path("events")
         .and(warp::get())
         .and(state_filter.clone())
-        .map(|state: Arc<AppState>| {
-            let rx = state.notifier.subscribe();
-            let stream = event_stream(rx);
-            warp::sse::reply(stream)
-        });
+        .and_then(sse_handler);
 
     let mut host = args.host.clone();
     if args.host == "0.0.0.0" {
@@ -230,12 +259,13 @@ fn render_markdown_to_html(markdown_input: &str) -> String {
                 str.push_str(&s.into_string());
                 str.push_str("$</span>");
                 Event::Html(CowStr::from(str))
-            },
+            }
             Event::DisplayMath(s) => {
                 let mut str = String::from("<span class=\"math math-display\">$$");
                 str.push_str(&s.into_string());
                 str.push_str("$$</span>");
-                Event::Html(CowStr::from(str))},
+                Event::Html(CowStr::from(str))
+            }
             _ => event,
         }),
     );
@@ -273,11 +303,13 @@ struct AppState {
 }
 
 fn watch_markdown_file(app_state: Arc<AppState>) {
+    if app_state.file_path.to_string_lossy() == "Clipboard" {
+        return; // Disable watcher for clipboard input
+    }
+
     use notify::{Config, Event, EventKind, PollWatcher, RecommendedWatcher, RecursiveMode};
     use std::sync::mpsc::channel;
 
-    /// Made an Enum so that either watcher could be brought out of
-    /// the if/else scopes
     enum WatcherType {
         PollWatcher(PollWatcher),
         RecommendedWatcher(RecommendedWatcher),
@@ -285,10 +317,6 @@ fn watch_markdown_file(app_state: Arc<AppState>) {
 
     let (tx_notify, rx_notify) = channel();
     let watcher = if cfg!(target_os = "linux") {
-        // For whatever reason, recommended watcher was erroring out
-        // when used within WSL2 or linux (tested in Mint OS 21.2)
-        // notify issue https://github.com/notify-rs/notify/issues/254
-        // recommended using pollwatcher which worked in my testing
         let mut watcher = PollWatcher::new(
             tx_notify,
             Config::default().with_poll_interval(Duration::from_millis(500)),
@@ -314,7 +342,6 @@ fn watch_markdown_file(app_state: Arc<AppState>) {
                     match std::fs::read_to_string(&app_state.file_path) {
                         Ok(markdown_input) => {
                             let html_output = render_markdown_to_html(&markdown_input);
-                            // Use a synchronous write method or spawn a Tokio task to handle async operations
                             let app_state_clone = app_state.clone();
                             tokio::spawn(async move {
                                 let mut html_content = app_state_clone.html_content.write().await;
@@ -338,19 +365,9 @@ fn watch_markdown_file(app_state: Arc<AppState>) {
 }
 
 async fn sse_handler(app_state: Arc<AppState>) -> Result<impl warp::Reply, warp::Rejection> {
-    let mut rx = app_state.notifier.subscribe();
-
-    // Explicitly annotate the stream's item type
-    let event_stream = async_stream::stream! {
-        while let Ok(_) = rx.recv().await {
-            yield Ok::<_, warp::Error>(warp::sse::Event::default().data("reload"));
-        }
-    };
-
-    // Now warp::sse::reply will accept the stream as a TryStream
-    Ok(warp::sse::reply(
-        warp::sse::keep_alive().stream(event_stream),
-    ))
+    let rx = app_state.notifier.subscribe();
+    let stream = event_stream(rx);
+    Ok(warp::sse::reply(warp::sse::keep_alive().stream(stream)))
 }
 
 async fn serve_html(app_state: Arc<AppState>) -> Result<impl warp::Reply, warp::Rejection> {
