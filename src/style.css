@@ -44,6 +44,10 @@ code {
     border-radius: 3px;
 }
 
+pre code {
+    padding: 0;
+}
+
 h4 {
     font-size: 22px;
 }
@@ -92,21 +96,21 @@ table {
     margin-bottom: 25px;
 }
 
-code::-webkit-scrollbar {
+pre:has(code)::-webkit-scrollbar {
     width: 12px;
     height: 12px;
 }
 
-code::-webkit-scrollbar-track {
+pre:has(code)::-webkit-scrollbar-track {
     background: rgba(0, 0, 0, 0);
 }
 
-code::-webkit-scrollbar-thumb {
+pre:has(code)::-webkit-scrollbar-thumb {
     background-color: var(--scrollbar-thumb-color);
     border-radius: 10px;
 }
 
-code::-webkit-scrollbar-corner {
+pre:has(code)::-webkit-scrollbar-corner {
     background: rgba(0, 0, 0, 0);
 }
 
