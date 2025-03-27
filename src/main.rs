@@ -88,9 +88,8 @@ fn run_static_mode(args: &Args) -> io::Result<()> {
     };
 
     let html_output = render_markdown_to_html(&markdown_input);
-    let style = read_style_css();
     let fonts = read_fonts();
-    let html_content = build_full_html(&file_name, &html_output, &style, &fonts, false);
+    let html_content = build_full_html(&file_name, &html_output, false);
 
     let temp_file = tempfile::Builder::new()
         .prefix("markdown_preview_")
@@ -271,27 +270,6 @@ fn render_markdown_to_html(markdown_input: &str) -> String {
     html_output
 }
 
-fn read_style_css() -> String {
-    let css_file = include_str!("../src/style.css").to_string();
-    css_file
-}
-
-struct Fonts {
-    font_regular: String,
-    font_medium: String,
-    font_light: String,
-    favicon: String,
-}
-
-fn read_fonts() -> Fonts {
-    Fonts {
-        font_regular: encode(include_bytes!("./fonts/Oswald/Oswald-Regular.ttf")),
-        font_medium: encode(include_bytes!("./fonts/Oswald/Oswald-Regular.ttf")),
-        font_light: encode(include_bytes!("./fonts/Oswald/Oswald-Light.ttf")),
-        favicon: encode(include_bytes!("./favicon.ico")),
-    }
-}
-
 struct AppState {
     html_content: Arc<RwLock<String>>,
     css_content: String,
@@ -374,62 +352,64 @@ async fn serve_html(app_state: Arc<AppState>) -> Result<impl warp::Reply, warp::
     let full_html = build_full_html(
         &app_state.file_name,
         &html_content,
-        &app_state.css_content,
-        &app_state.fonts,
         true, // Enable live reload script
     );
     Ok(warp::reply::html(full_html))
 }
 
-fn build_full_html(
-    file_name: &str,
-    html_output: &str,
-    style: &str,
-    fonts: &Fonts,
-    enable_reload: bool,
-) -> String {
-    let reload_script = if enable_reload {
-        r#"
-        <script>
-            var evtSource = new EventSource("/events");
-            evtSource.onmessage = function(e) {
-                if (e.data === "reload") {
-                    location.reload();
-                }
-            };
-        </script>
-        "#
-    } else {
-        ""
-    };
+fn read_style_css() -> String {
+    include_str!("../src/static/style.css").to_string()
+}
+
+fn read_katex_code() -> KatexCode {
+    KatexCode {
+        js: include_str!("../src/static/katex/katex.min.js").to_string(),
+        css: include_str!("../src/static/katex/katex.min.css").to_string(),
+        auto_render: include_str!("../src/static/katex/auto-render.min.js").to_string(),
+    }
+}
+
+struct KatexCode {
+    js: String,
+    css: String,
+    auto_render: String,
+}
+
+struct Fonts {
+    font_regular: String,
+    font_medium: String,
+    font_light: String,
+}
+
+fn read_fonts() -> Fonts {
+    Fonts {
+        font_regular: encode(include_bytes!("./static/fonts/Oswald/Oswald-Regular.ttf")),
+        font_medium: encode(include_bytes!("./static/fonts/Oswald/Oswald-Regular.ttf")),
+        font_light: encode(include_bytes!("./static/fonts/Oswald/Oswald-Light.ttf")),
+    }
+}
+
+fn read_favicon() -> String {
+    encode(include_bytes!("./static/favicon.ico"))
+}
+
+fn build_katex_code() -> String {
+    let katex_assets = read_katex_code();
+
+    format!(
+        r#"<style>{}</style>
+<script>{}</script>
+<script>{}</script>"#,
+        katex_assets.css, katex_assets.js, katex_assets.auto_render
+    )
+}
+
+fn build_style() -> String {
+    let css = read_style_css();
+    let fonts = read_fonts();
 
     format!(
         r#"
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="icon" href="data:image/x-icon;base64,{}">
-    <script>
-        document.addEventListener('DOMContentLoaded', function() {{
-            const footnotes = document.querySelectorAll('.footnote-definition');
-            if (footnotes.length > 0) {{
-                const container = document.createElement('div');
-                container.id = 'footnote-container';
-                footnotes.forEach(footnote => container.appendChild(footnote));
-                document.body.appendChild(container);
-            }}
-        }});
-    </script>
-    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
-    <script>
-    window.MathJax = {{
-      tex: {{
-        inlineMath: [['$', '$'], ['\\(', '\\)']]
-      }}
-    }};
-    </script>
     <style>
         @font-face {{
             font-family: 'Oswald';
@@ -449,8 +429,75 @@ fn build_full_html(
             font-weight: 300;
             font-style: normal;
         }}
+
         {}
+
     </style>
+
+    "#,
+        fonts.font_regular, fonts.font_medium, fonts.font_light, css,
+    )
+}
+
+fn build_full_html(file_name: &str, html_output: &str, enable_reload: bool) -> String {
+    let reload_script = if enable_reload {
+        r#"
+        <script>
+            var evtSource = new EventSource("/events");
+            evtSource.onmessage = function(e) {
+                if (e.data === "reload") {
+                    location.reload();
+                }
+            };
+        </script>
+        "#
+    } else {
+        ""
+    };
+
+    let katex_code_tags = build_katex_code();
+    let style = build_style();
+    let favicon = read_favicon();
+
+    format!(
+        r#"
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" href="data:image/x-icon;base64,{}">
+
+    {}
+
+    {}
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {{
+            // for rendering the footnotes at the bottom of the page
+            const footnotes = document.querySelectorAll('.footnote-definition');
+            if (footnotes.length > 0) {{
+                const container = document.createElement('div');
+                container.id = 'footnote-container';
+                footnotes.forEach(footnote => container.appendChild(footnote));
+                document.body.appendChild(container);
+            }}
+
+            // for katex
+            try {{
+                renderMathInElement(document.body, {{
+                    delimiters: [
+                        {{left: '$$', right: '$$', display: true}},
+                        {{left: '$', right: '$', display: false}}
+                    ],
+                    throwOnError : false
+                }});
+            }} catch (e) {{
+                console.error("KaTeX rendering failed:", e);
+            }}
+        }});
+    </script>
+
     <title>
         {}
     </title>
@@ -461,13 +508,6 @@ fn build_full_html(
 </body>
 </html>
 "#,
-        fonts.favicon,
-        fonts.font_regular,
-        fonts.font_medium,
-        fonts.font_light,
-        style,
-        file_name,
-        html_output,
-        reload_script
+        favicon, style, katex_code_tags, file_name, html_output, reload_script
     )
 }

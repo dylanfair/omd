@@ -4,7 +4,7 @@ use std::process::Command;
 
 /// Reads the contents of the CSS file from assets/style.css.
 pub fn read_style_css() -> String {
-    fs::read_to_string("assets/style.css").unwrap_or_else(|_| String::from(""))
+    fs::read_to_string("static/style.css").unwrap_or_else(|_| String::from(""))
 }
 
 /// Reads asset file at the given path and returns a base64 encoded string.
@@ -17,10 +17,10 @@ pub fn read_asset_base64(path: &str) -> String {
 
 /// Reads font files and favicon from assets and returns (font_regular, font_medium, font_light, favicon).
 pub fn read_fonts() -> (String, String, String, String) {
-    let font_regular = read_asset_base64("assets/fonts/Oswald-Regular.ttf");
+    let font_regular = read_asset_base64("static/fonts/Oswald-Regular.ttf");
     let font_medium = font_regular.clone();
-    let font_light = read_asset_base64("assets/fonts/Oswald-Light.ttf");
-    let favicon = read_asset_base64("assets/favicon.ico");
+    let font_light = read_asset_base64("static/fonts/Oswald-Light.ttf");
+    let favicon = read_asset_base64("static/favicon.ico");
     (font_regular, font_medium, font_light, favicon)
 }
 
